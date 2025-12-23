@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="tr" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <title>Üreten Eller • Doğrulama / Şifre Sıfırlama</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:#f3f4f6;
+      color:#111827;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      min-height:100vh;
+    }
+    .box{
+      background:#fff;
+      border-radius:16px;
+      padding:20px 18px;
+      max-width:420px;
+      width:100%;
+      box-shadow:0 20px 45px rgba(0,0,0,.12);
+      border:1px solid #e5e7eb;
+    }
+    h1{ font-size:20px;margin:0 0 8px;font-weight:800; }
+    p{ margin:0 0 10px;font-size:14px;line-height:1.5;color:#4b5563; }
+    .hint{ font-size:12px;color:#6b7280;margin-top:4px; }
+    .error{ color:#b91c1c; }
+    label{ font-size:13px;color:#374151;display:block;margin-bottom:4px; }
+    input{
+      width:100%;
+      border:1px solid #d1d5db;
+      border-radius:10px;
+      padding:10px 12px;
+      font-size:14px;
+      margin-bottom:10px;
+    }
+    button{
+      appearance:none;border:0;cursor:pointer;
+      border-radius:12px;padding:10px 14px;
+      font-weight:800;
+    }
+    .btn-gold{
+      background:linear-gradient(180deg,#f7e7b5,#e8c972 40%,#d7b45d 55%,#caa552 80%,#b79343);
+      color:#fff;
+      width:100%;
+      border:1px solid #b18a37;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 4px 18px rgba(202,165,82,.35);
+    }
+    .link{
+      display:inline-block;
+      margin-top:10px;
+      font-size:13px;
+      color:#2563eb;
+      text-decoration:none;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1 id="title">İşlem yapılıyor…</h1>
+    <p id="msg">Lütfen bekleyin.</p>
+
+    <form id="resetForm" style="display:none">
+      <label for="newPass">Yeni Şifre</label>
+      <input id="newPass" type="password" minlength="6" required placeholder="En az 6 karakter" />
+      <button type="submit" class="btn-gold">Şifreyi Güncelle</button>
+      <div class="hint">Şifrenizi güncelledikten sonra Giriş/Kayıt ekranından giriş yapabilirsiniz.</div>
+    </form>
+
+    <a href="/" class="link">Ana sayfaya dön</a>
+  </div>
+
+  <!-- Firebase config -->
+  <script type="module" src="/firebase-init.js"></script>
+
+  <script type="module">
+    import {
+      getAuth,
+      applyActionCode,
+      verifyPasswordResetCode,
+      confirmPasswordReset
+    } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js';
+
+    const auth = getAuth();
+
+    const titleEl = document.getElementById('title');
+    const msgEl   = document.getElementById('msg');
+    const formEl  = document.getElementById('resetForm');
+    const passInp = document.getElementById('newPass');
+
+    function getParam(name){
+      const url = new URL(window.location.href);
+      return url.searchParams.get(name);
+    }
+
+    const mode   = getParam('mode');       // verifyEmail | resetPassword vs.
+    const oobCode= getParam('oobCode');
+
+    if (!mode || !oobCode){
+      titleEl.textContent = 'Geçersiz bağlantı';
+      msgEl.textContent   = 'İşlem kodu eksik veya geçersiz.';
+    } else if (mode === 'verifyEmail'){
+      handleVerifyEmail();
+    } else if (mode === 'resetPassword'){
+      handleResetPassword();
+    } else {
+      titleEl.textContent = 'Desteklenmeyen işlem';
+      msgEl.textContent   = 'Bu bağlantı şu anda desteklenmeyen bir işlem türü içeriyor.';
+    }
+
+    async function handleVerifyEmail(){
+      titleEl.textContent = 'E-posta doğrulanıyor…';
+      msgEl.textContent   = 'Lütfen bekleyin, işleminiz gerçekleştiriliyor.';
+
+      try{
+        await applyActionCode(auth, oobCode);
+        titleEl.textContent = 'E-postanız doğrulandı';
+        msgEl.textContent   = 'Artık Üreten Eller hesabınızla giriş yapabilirsiniz.';
+      }catch(e){
+        console.error(e);
+        titleEl.textContent = 'E-posta doğrulanamadı';
+        msgEl.textContent   = 'Bağlantı süresi dolmuş veya daha önce kullanılmış olabilir.';
+        msgEl.classList.add('error');
+      }
+    }
+
+    async function handleResetPassword(){
+      titleEl.textContent = 'Şifre sıfırlama kontrol ediliyor…';
+      msgEl.textContent   = 'Lütfen bekleyin.';
+
+      try{
+        // Kod geçerli mi kontrol et
+        await verifyPasswordResetCode(auth, oobCode);
+        // Geçerliyse formu göster
+        titleEl.textContent = 'Şifre Sıfırlama';
+        msgEl.textContent   = 'Yeni şifrenizi belirleyin.';
+        formEl.style.display = 'block';
+      }catch(e){
+        console.error(e);
+        titleEl.textContent = 'Şifre sıfırlama başarısız';
+        msgEl.textContent   = 'Bağlantı süresi dolmuş veya daha önce kullanılmış olabilir.';
+        msgEl.classList.add('error');
+      }
+    }
+
+    formEl?.addEventListener('submit', async (ev)=>{
+      ev.preventDefault();
+      const newPass = (passInp.value || '').trim();
+
+      if (newPass.length < 6){
+        alert('Şifre en az 6 karakter olmalı.');
+        return;
+      }
+
+      try{
+        await confirmPasswordReset(auth, oobCode, newPass);
+        formEl.style.display = 'none';
+        titleEl.textContent  = 'Şifreniz güncellendi';
+        msgEl.textContent    = 'Artık yeni şifrenizle giriş yapabilirsiniz.';
+      }catch(e){
+        console.error(e);
+        alert('Şifre güncellenirken bir hata oluştu: ' + (e.message || e.code));
+      }
+    });
+  </script>
+</body>
+</html>

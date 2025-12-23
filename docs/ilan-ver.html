@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="tr" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>İlan Oluştur • Üreten Eller</title>
+  <meta name="description" content="Üreten Eller'de ilan oluşturun. Çok dilli arayüz: TR/EN/AR/DE. Fotoğraf önizleme, kapak seçimi ve silme desteklenir." />
+  <link rel="icon" href="/assets/icons/favicon.png" />
+
+  <!-- === LOGIN GUARD (oturum yoksa girişe) === -->
+  <script>
+    (function(){
+      function goLogin(){
+        var next = location.pathname;
+        try {
+          // Eğer query varsa aynen taşı
+          if (location.search) next += location.search;
+          if (location.hash)   next += location.hash;
+        } catch(_) {}
+        location.replace('/giris.html?next=' + encodeURIComponent(next));
+      }
+
+      // Hızlı kontrol: localStorage ue_user yoksa doğrudan
+      var hasLocal = false;
+      try { hasLocal = !!localStorage.getItem('ue_user'); } catch(_){}
+
+      // Firebase hazır olduğunda da doğrula (geri kapı)
+      document.addEventListener('fb-ready', function(){
+        try{
+          var fb = window.firebase || self.firebase;
+          if (fb && fb.getAuth) {
+            var auth = fb.getAuth(self.__fb && self.__fb.app);
+            var unsub = fb.onAuthStateChanged(auth, function(user){
+              if(!user) goLogin();
+              if (typeof unsub === 'function') unsub();
+            }, function(){ goLogin(); });
+            // Ekstra emniyet: kısa bir süre sonra hala user yoksa
+            setTimeout(function(){ if(!auth || !auth.currentUser) goLogin(); }, 1200);
+          } else {
+            if(!hasLocal) goLogin();
+          }
+        } catch(_){
+          if(!hasLocal) goLogin();
+        }
+      }, { once:true });
+
+      // Firebase yüklenmezse bile koru
+      setTimeout(function(){
+        if(!hasLocal) goLogin();
+      }, 800);
+    })();
+  </script>
+
+  <style>
+    /* ===== Açık Tema (beyaz zemin) ===== */
+    :root{
+      --ink:#0b1220;
+      --muted:#6b7280;
+      --brd:#e5e7eb;
+      --card:#ffffff;
+      --ok:#10b981;
+    }
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;
+      background:#ffffff;
+      color:var(--ink);
+      -webkit-font-smoothing:antialiased;
+    }
+
+    .wrap{max-width:960px;margin:24px auto;padding:16px}
+    .card{
+      background:var(--card);
+      border:1px solid var(--brd);
+      border-radius:18px;
+      padding:20px;
+      box-shadow:0 8px 24px rgba(0,0,0,.06);
+    }
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+
+    label{display:block;font-size:13px;color:var(--muted);margin:6px 0}
+    input,select,textarea{
+      width:100%;
+      background:#fff;
+      color:var(--ink);
+      border:1px solid var(--brd);
+      border-radius:12px;
+      padding:10px 12px;
+    }
+    textarea{min-height:120px;resize:vertical}
+
+    /* Önizleme kartları */
+    .previews{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:10px}
+    .thumb{position:relative;border:1px solid var(--brd);border-radius:10px;overflow:hidden;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px}
+    .thumb img{width:100%;height:auto;max-height:220px;object-fit:contain;display:block;border-radius:8px;margin-bottom:6px}
+    .thumb .btns{display:flex;gap:6px;justify-content:center;margin-bottom:4px}
+    .thumb button{background:rgba(0,0,0,.7);color:#fff;border:none;padding:4px 8px;font-size:12px;border-radius:6px;cursor:pointer}
+    .thumb .cover{position:absolute;top:6px;left:6px;background:#10b981;color:#03222a;font-size:12px;padding:2px 6px;border-radius:8px;font-weight:700}
+
+    /* Butonlar */
+    .actions{display:flex;gap:8px;justify-content:flex-end}
+
+    .btn{cursor:pointer;border:1px solid var(--brd);background:#fff;color:var(--ink);padding:10px 14px;border-radius:12px;font-weight:800}
+    .btn:active{transform:translateY(1px)}
+    .btn.gold{
+      color:#111;
+      background:linear-gradient(180deg,#f7e7b5,#e8c972 40%,#d7b45d 55%,#caa552 80%,#b79343);
+      border:1px solid #b18a37;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 4px 18px rgba(202,165,82,.25);
+    }
+
+    /* Mevcut buton sınıflarını koruyup gold’a yönlendir */
+    button.primary{ all:unset; }
+    button.primary{ cursor:pointer; display:inline-block; padding:10px 14px; border-radius:12px; font-weight:800; }
+    button.primary{ color:#111; background:linear-gradient(180deg,#f7e7b5,#e8c972 40%,#d7b45d 55%,#caa552 80%,#b79343); border:1px solid #b18a37; box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 4px 18px rgba(202,165,82,.25); }
+
+    .hint{font-size:12px;color:var(--muted)}
+    .closeX{
+      background:#111;color:#fff;border:none;width:36px;height:36px;border-radius:999px;
+      font-size:20px;line-height:36px;text-align:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.15)
+    }
+
+    /* Form grid */
+    form#listingForm{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+    .full{grid-column:1/-1}
+
+    /* Mobil uyum: 1 sütun */
+    @media (max-width: 720px){
+      form#listingForm{grid-template-columns:1fr}
+      .topbar{align-items:flex-start;gap:8px}
+    }
+
+    /* Toast (açık tema) */
+    #toast{
+      position:fixed;left:50%;top:20px;transform:translateX(-50%) scale(0.95);opacity:0;transition:.25s;z-index:9999;
+      background:#111;color:#fff;border:1px solid #111;padding:10px 14px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.2);
+    }
+  </style>
+  
+  <!-- Firestore için global yardımcıları sağlayan dosya -->
+  <script type="module" src="/firebase-init.js"></script>
+
+  <!-- >>> BURAYA YAPIŞTIR <<< -->
+  <script type="module">
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js';
+
+    (function protectPage(){
+      try{
+        const auth = getAuth(self.__fb?.app);
+        onAuthStateChanged(auth, async (user) => {
+          if (!user) { location.replace('/index.html'); return; }
+          const usesPassword = user.providerData?.some(p => p.providerId === 'password');
+          try { await user.reload(); } catch(_) {}
+          if (usesPassword && !user.emailVerified) { location.replace('/index.html'); return; }
+        });
+      }catch(e){
+        console.warn('protectPage hata', e);
+        try{ location.replace('/index.html'); }catch(_){}
+      }
+    })();
+  </script>
+</head>
+
+<body>
+   <script>
+    // Giriş yapılmamışsa index.html'e yönlendir
+    if (!localStorage.getItem('ue_user')) {
+      location.replace('/index.html');
+    }
+  </script>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="topbar">
+        <div>
+          <h1 id="t_title">İlan Oluştur</h1>
+          <p class="hint" id="t_sub">PREMIUM: <strong>10 ilan</strong>. FREE: <strong>5 ilan</strong>. Tüm ilanlar <strong>30 gün</strong> yayında.</p>
+        </div>
+        <div class="lang">
+          <label id="t_lang" for="langSel">Dil</label>
+          <select id="langSel">
+  <option value="tr">Türkçe</option>
+  <option value="en">English</option>
+  <option value="ar">العربية</option>
+  <option value="de">Deutsch</option>
+  <option value="az">Azərbaycan dili</option>
+  <option value="fa">فارسی</option>
+</select>
+        </div>
+        <button id="closeBtn" class="closeX" aria-label="Kapat">×</button>
+      </div>
+
+      <form id="listingForm" novalidate>
+        <div class="full">
+          <label id="l_title">Başlık</label>
+          <input id="title" required placeholder="Örn: El yapımı örgü bebek" maxlength="80" />
+          <div class="hint" id="h_title">6–80 karakter</div>
+        </div>
+        <div class="full">
+          <label id="l_description">Açıklama</label>
+          <textarea id="description" required placeholder="Ürünü detaylı anlatın" maxlength="3000"></textarea>
+          <div class="hint" id="h_description">30–3000 karakter, uygunsuz içerik reddedilir.</div>
+        </div>
+
+        <div>
+          <label id="l_category">Kategori</label>
+          <select id="category" required></select>
+        </div>
+        <div>
+          <label id="l_subcategory">Alt Kategori</label>
+          <select id="subcategory" required disabled></select>
+        </div>
+
+                <div>
+          <label id="l_country">Ülke</label>
+          <select id="country" required>
+            <option value="TR">Türkiye</option>
+            <option value="DE">Almanya</option>
+            <option value="CY">Kıbrıs</option>
+            <option value="AZ">Azerbaycan</option>
+            <option value="IR">İran</option>
+          </select>
+        </div>
+        <div>
+          <label id="l_province">İl / Bölge</label>
+          <select id="province" required></select>
+        </div>
+        <div>
+          <label id="l_district">İlçe</label>
+          <input id="districtInput" required placeholder="İlçenizi yazın" />
+        </div>
+
+        <div>
+          <label id="l_price">Fiyat (TL)</label>
+          <input id="price" type="number" min="1" step="1" placeholder="Örn: 350" required />
+        </div>
+        <div>
+          <label id="l_stock">Stok</label>
+          <select id="stock" required>
+            <option value="var">Var</option>
+            <option value="yok">Yok</option>
+          </select>
+        </div>
+
+        <div class="full">
+          <label id="l_images">Fotoğraflar (en fazla 5)</label>
+          <input id="images" type="file" accept="image/*" multiple />
+          <div id="previews" class="previews"></div>
+        </div>
+
+        <div class="full actions">
+          <button type="reset" id="b_cancel" class="btn">İptal</button>
+          <button type="submit" class="primary" id="b_submit">Kaydet</button>
+        </div>
+
+        <div class="full">
+          <div id="msg" class="hint"></div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast">Yönetici onayından sonra yayınlanacaktır.</div>
+
+  <!-- i18n + önizleme (değiştirilmedi; sadece closeBtn hedefi index.html yapıldı) -->
+  <script>
+  (function(){
+    'use strict';
+    /* ——— mevcut i18n ve yardımcılar aynen ——— */
+
+    const i18n = {
+  tr: {
+    title: "İlan Oluştur",
+    sub: 'PREMIUM: <strong>10 ilan</strong>. FREE: <strong>5 ilan</strong>. Tüm ilanlar <strong>30 gün</strong> yayında.',
+    lang: "Dil",
+    l_title: "Başlık",
+    h_title: "6–80 karakter",
+    l_description: "Açıklama",
+    h_description: "30–3000 karakter, uygunsuz içerik reddedilir.",
+    l_category: "Kategori",
+    l_subcategory: "Alt Kategori",
+    l_country: "Ülke",
+    l_province: "İl / Bölge",
+    l_district: "İlçe",
+    l_price: "Fiyat (TL)",
+    l_stock: "Stok",
+    l_images: "Fotoğraflar (en fazla 5)",
+    btn_cancel: "İptal",
+    btn_submit: "Kaydet",
+    placeholders: {
+      title: "Örn: El yapımı örgü bebek",
+      desc: "Ürünü detaylı anlatın",
+      district: "İlçenizi yazın",
+      price: "Örn: 350"
+    },
+    stock: { var: "Var", yok: "Yok" },
+    toast_ok: "İlanınız kaydedildi. Yönetici onayından sonra yayınlanacaktır.",
+    cover: "Kapak",
+    coverMake: "Kapak yap",
+    del: "Sil",
+    choose: "Seçiniz",
+    errors: {
+      auth: "Lütfen önce giriş yapın.",
+      title: "Başlık çok kısa. (min. 6 karakter)",
+      desc: "Açıklama çok kısa. (min. 30 karakter)",
+      cat: "Lütfen bir kategori seçin.",
+      sub: "Lütfen bir alt kategori seçin.",
+      prov: "Lütfen ülke ve il/bölge seçin.",
+      dist: "Lütfen ilçe bilgisini girin.",
+      price: "Fiyat en az 1 TL olmalıdır.",
+      files: "En fazla 5 fotoğraf yükleyebilirsiniz.",
+      filetype: "Sadece JPG, PNG veya WebP formatında fotoğraf yükleyin."
+    }
+  },
+
+  en: {
+    title: "Create Listing",
+    sub: 'PREMIUM: <strong>10 listings</strong>. FREE: <strong>5 listings</strong>. All listings stay online for <strong>30 days</strong>.',
+    lang: "Language",
+    l_title: "Title",
+    h_title: "6–80 characters",
+    l_description: "Description",
+    h_description: "30–3000 characters, inappropriate content will be rejected.",
+    l_category: "Category",
+    l_subcategory: "Subcategory",
+    l_country: "Country",
+    l_province: "Province / Region",
+    l_district: "District",
+    l_price: "Price (TRY)",
+    l_stock: "Stock",
+    l_images: "Photos (max. 5)",
+    btn_cancel: "Cancel",
+    btn_submit: "Save",
+    placeholders: {
+      title: "e.g. Handmade knitted doll",
+      desc: "Describe your product in detail",
+      district: "Type your district",
+      price: "e.g. 350"
+    },
+    stock: { var: "In stock", yok: "Out of stock" },
+    toast_ok: "Your listing has been saved. It will be published after admin approval.",
+    cover: "Cover",
+    coverMake: "Make cover",
+    del: "Delete",
+    choose: "Select",
+    errors: {
+      auth: "Please sign in first.",
+      title: "Title is too short. (min. 6 characters)",
+      desc: "Description is too short. (min. 30 characters)",
+      cat: "Please select a category.",
+      sub: "Please select a subcategory.",
+      prov: "Please select a country and province/region.",
+      dist: "Please enter your district.",
+      price: "Price must be at least 1 TRY.",
+      files: "You can upload up to 5 photos.",
+      filetype: "Please upload only JPG, PNG or WebP images."
+    }
+  },
+
+  de: {
+    title: "Anzeige erstellen",
+    sub: 'PREMIUM: <strong>10 Anzeigen</strong>. FREE: <strong>5 Anzeigen</strong>. Alle Anzeigen bleiben <strong>30 Tage</strong> online.',
+    lang: "Sprache",
+    l_title: "Titel",
+    h_title: "6–80 Zeichen",
+    l_description: "Beschreibung",
+    h_description: "30–3000 Zeichen, unzulässige Inhalte werden abgelehnt.",
+    l_category: "Kategorie",
+    l_subcategory: "Unterkategorie",
+    l_country: "Land",
+    l_province: "Bundesland / Region",
+    l_district: "Bezirk",
+    l_price: "Preis (TRY)",
+    l_stock: "Bestand",
+    l_images: "Fotos (max. 5)",
+    btn_cancel: "Abbrechen",
+    btn_submit: "Speichern",
+    placeholders: {
+      title: "z.B. Handgemachte Strickpuppe",
+      desc: "Beschreiben Sie Ihr Produkt ausführlich",
+      district: "Bezirk eingeben",
+      price: "z.B. 350"
+    },
+    stock: { var: "Verfügbar", yok: "Nicht verfügbar" },
+    toast_ok: "Ihre Anzeige wurde gespeichert. Sie wird nach Freigabe durch den Admin veröffentlicht.",
+    cover: "Titelbild",
+    coverMake: "Als Titelbild",
+    del: "Löschen",
+    choose: "Bitte wählen",
+    errors: {
+      auth: "Bitte melden Sie sich zuerst an.",
+      title: "Der Titel ist zu kurz. (mind. 6 Zeichen)",
+      desc: "Die Beschreibung ist zu kurz. (mind. 30 Zeichen)",
+      cat: "Bitte wählen Sie eine Kategorie.",
+      sub: "Bitte wählen Sie eine Unterkategorie.",
+      prov: "Bitte wählen Sie ein Land und ein Bundesland/Region.",
+      dist: "Bitte geben Sie Ihren Bezirk ein.",
+      price: "Der Preis muss mindestens 1 TRY betragen.",
+      files: "Sie können bis zu 5 Fotos hochladen.",
+      filetype: "Bitte nur Bilder im Format JPG, PNG oder WebP hochladen."
+    }
+  },
+
+  az: {
+    title: "Elan Yarat",
+    sub: 'PREMİUM: <strong>10 elan</strong>. FREE: <strong>5 elan</strong>. Bütün elanlar <strong>30 gün</strong> aktiv qalır.',
+    lang: "Dil",
+    l_title: "Başlıq",
+    h_title: "6–80 simvol",
+    l_description: "Açıqlama",
+    h_description: "30–3000 simvol, uyğun olmayan məzmun qəbul edilmir.",
+    l_category: "Kateqoriya",
+    l_subcategory: "Alt kateqoriya",
+    l_country: "Ölkə",
+    l_province: "Vilayət / Region",
+    l_district: "Rayon",
+    l_price: "Qiymət (TL)",
+    l_stock: "Anbar",
+    l_images: "Şəkillər (maks. 5)",
+    btn_cancel: "Ləğv et",
+    btn_submit: "Yadda saxla",
+    placeholders: {
+      title: "Məs: Əl işi toxunma oyuncağı",
+      desc: "Məhsulu ətraflı təsvir edin",
+      district: "Rayonunuzu yazın",
+      price: "Məs: 350"
+    },
+    stock: { var: "Var", yok: "Yox" },
+    toast_ok: "Elanınız yadda saxlanıldı. Admin təsdiqindən sonra dərc olunacaq.",
+    cover: "Qapaq",
+    coverMake: "Qapaq et",
+    del: "Sil",
+    choose: "Seçin",
+    errors: {
+      auth: "Zəhmət olmasa əvvəlcə daxil olun.",
+      title: "Başlıq çox qısadır. (min. 6 simvol)",
+      desc: "Açıqlama çox qısadır. (min. 30 simvol)",
+      cat: "Zəhmət olmasa kateqoriya seçin.",
+      sub: "Zəhmət olmasa alt kateqoriya seçin.",
+      prov: "Zəhmət olmasa ölkə və vilayət/region seçin.",
+      dist: "Zəhmət olmasa rayonunuzu yazın.",
+      price: "Qiymət ən azı 1 TL olmalıdır.",
+      files: "Ən çox 5 şəkil yükləyə bilərsiniz.",
+      filetype: "Yalnız JPG, PNG və ya WebP şəkilləri yükləyin."
+    }
+  },
+
+  ar: {
+    title: "إنشاء إعلان",
+    sub: 'باقات PREMIUM: <strong>10 إعلانات</strong>. المجانية: <strong>5 إعلانات</strong>. تبقى جميع الإعلانات <strong>30 يوماً</strong> على الموقع.',
+    lang: "اللغة",
+    l_title: "العنوان",
+    h_title: "6–80 حرفاً",
+    l_description: "الوصف",
+    h_description: "من 30 إلى 3000 حرف، سيتم رفض المحتوى غير اللائق.",
+    l_category: "الفئة",
+    l_subcategory: "الفئة الفرعية",
+    l_country: "الدولة",
+    l_province: "المقاطعة / المنطقة",
+    l_district: "الحي / القضاء",
+    l_price: "السعر (ليرة تركية)",
+    l_stock: "التوفر",
+    l_images: "الصور (حد أقصى 5)",
+    btn_cancel: "إلغاء",
+    btn_submit: "حفظ",
+    placeholders: {
+      title: "مثال: دمية محاكة يدوياً",
+      desc: "اشرح المنتج بالتفصيل",
+      district: "اكتب اسم الحي / القضاء",
+      price: "مثال: 350"
+    },
+    stock: { var: "متوفر", yok: "غير متوفر" },
+    toast_ok: "تم حفظ إعلانك. سيتم نشره بعد موافقة الإدارة.",
+    cover: "صورة الغلاف",
+    coverMake: "تعيين كغلاف",
+    del: "حذف",
+    choose: "اختر",
+    errors: {
+      auth: "يرجى تسجيل الدخول أولاً.",
+      title: "العنوان قصير جداً (الحد الأدنى 6 أحرف).",
+      desc: "الوصف قصير جداً (الحد الأدنى 30 حرفاً).",
+      cat: "يرجى اختيار فئة.",
+      sub: "يرجى اختيار فئة فرعية.",
+      prov: "يرجى اختيار الدولة والمقاطعة/المنطقة.",
+      dist: "يرجى إدخال اسم الحي / القضاء.",
+      price: "يجب أن يكون السعر 1 ليرة تركية على الأقل.",
+      files: "يمكنك رفع ما يصل إلى 5 صور.",
+      filetype: "يرجى رفع صور بصيغة JPG أو PNG أو WebP فقط."
+    }
+  },
+
+  fa: {
+    title: "ایجاد آگهی",
+    sub: 'طرح PREMIUM: <strong>10 آگهی</strong>. طرح رایگان: <strong>5 آگهی</strong>. همه آگهی‌ها به مدت <strong>30 روز</strong> فعال می‌مانند.',
+    lang: "زبان",
+    l_title: "عنوان",
+    h_title: "۶ تا ۸۰ کاراکتر",
+    l_description: "توضیحات",
+    h_description: "۳۰ تا ۳۰۰۰ کاراکتر، محتوای نامناسب رد می‌شود.",
+    l_category: "دسته‌بندی",
+    l_subcategory: "زیر دسته",
+    l_country: "کشور",
+    l_province: "استان / منطقه",
+    l_district: "شهر / ناحیه",
+    l_price: "قیمت (لیر ترکیه)",
+    l_stock: "موجودی",
+    l_images: "تصاویر (حداکثر ۵ عدد)",
+    btn_cancel: "انصراف",
+    btn_submit: "ذخیره",
+    placeholders: {
+      title: "مثال: عروسک بافتنی دست‌ساز",
+      desc: "محصول خود را با جزئیات توضیح دهید",
+      district: "شهر یا ناحیه خود را وارد کنید",
+      price: "مثال: ۳۵۰"
+    },
+    stock: { var: "موجود", yok: "ناموجود" },
+    toast_ok: "آگهی شما ذخیره شد. پس از تأیید مدیر منتشر خواهد شد.",
+    cover: "کاور",
+    coverMake: "انتخاب به عنوان کاور",
+    del: "حذف",
+    choose: "انتخاب کنید",
+    errors: {
+      auth: "لطفاً ابتدا وارد حساب کاربری شوید.",
+      title: "عنوان بسیار کوتاه است. (حداقل ۶ کاراکتر)",
+      desc: "توضیحات بسیار کوتاه است. (حداقل ۳۰ کاراکتر)",
+      cat: "لطفاً یک دسته‌بندی انتخاب کنید.",
+      sub: "لطفاً یک زیر دسته انتخاب کنید.",
+      prov: "لطفاً کشور و استان/منطقه را انتخاب کنید.",
+      dist: "لطفاً شهر یا ناحیه خود را وارد کنید.",
+      price: "قیمت باید حداقل ۱ لیر ترکیه باشد.",
+      files: "شما می‌توانید حداکثر ۵ تصویر بارگذاری کنید.",
+      filetype: "لطفاً فقط تصاویر با فرمت JPG یا PNG یا WebP بارگذاری کنید."
+    }
+  }
+};
+
+    const cats = [ /* ... AYNI ... */ ];
+    const COUNTRY_REGIONS = {
+  "TR": [
+    "Adana","Adıyaman","Afyonkarahisar","Ağrı","Aksaray","Amasya","Ankara","Antalya","Ardahan",
+    "Artvin","Aydın","Balıkesir","Bartın","Batman","Bayburt","Bilecik","Bingöl","Bitlis","Bolu",
+    "Burdur","Bursa","Çanakkale","Çankırı","Çorum","Denizli","Diyarbakır","Düzce","Edirne",
+    "Elazığ","Erzincan","Erzurum","Eskişehir","Gaziantep","Giresun","Gümüşhane","Hakkari",
+    "Hatay","Iğdır","Isparta","İstanbul","İzmir","Kahramanmaraş","Karabük","Karaman","Kars",
+    "Kastamonu","Kayseri","Kırıkkale","Kırklareli","Kırşehir","Kilis","Kocaeli","Konya",
+    "Kütahya","Malatya","Manisa","Mardin","Mersin","Muğla","Muş","Nevşehir","Niğde","Ordu",
+    "Osmaniye","Rize","Sakarya","Samsun","Siirt","Sinop","Sivas","Şanlıurfa","Şırnak","Tekirdağ",
+    "Tokat","Trabzon","Tunceli","Uşak","Van","Yalova","Yozgat","Zonguldak"
+  ],
+
+  "DE": [
+    "Baden-Württemberg","Bayern","Berlin","Brandenburg","Bremen","Hamburg","Hessen",
+    "Mecklenburg-Vorpommern","Niedersachsen","Nordrhein-Westfalen","Rheinland-Pfalz",
+    "Saarland","Sachsen","Sachsen-Anhalt","Schleswig-Holstein","Thüringen"
+  ],
+
+  "CY": [
+    "Gazimağusa","Girne","Güzelyurt","İskele","Lefke","Lefkoşa"
+  ],
+
+  "IR": [
+    "Ardabil","Azerbaycan-e Gharbi (Batı Azerbaycan)","Azerbaycan-e Sharqi (Doğu Azerbaycan)",
+    "Buşehr","Chaharmahal ve Bahtiyari","Elburz","Fars","Gilan","Golestan","Hamedan","Hormozgan",
+    "Ilam","İsfahan","Kerman","Kermanşah","Khorasan-e Jonoubi (Güney Horasan)",
+    "Khorasan-e Razavi (Razavi Horasan)","Khorasan-e Shomali (Kuzey Horasan)","Khuzestan",
+    "Kohgiluyeh ve Buyer Ahmed","Kurdistan","Lorestan","Markazi","Mazandaran","Qazvin","Qom",
+    "Semnan","Sistan ve Belucistan","Tahran","Yazd","Zanjan"
+  ],
+
+  "AZ": [
+    "Abşeron","Ağcabədi","Ağdam","Ağdaş","Ağstafa","Ağsu","Astara","Babək","Bakı","Balakən",
+    "Bərdə","Beyləqan","Biləsuvar","Cəbrayıl","Cəlilabad","Culfa","Daşkəsən","Füzuli","Gədəbəy",
+    "Gəncə","Goranboy","Göygöl","Göyçay","Hacıqabul","Xaçmaz","Xankəndi","Xızı","Xocalı",
+    "Xocavənd","İmişli","İsmayıllı","Kəlbəcər","Kürdəmir","Laçın","Lənkəran","Lerik","Masallı",
+    "Mingəçevir","Naftalan","Neftçala","Oğuz","Ordubad","Qəbələ","Qax","Qazax","Qobustan","Quba",
+    "Qubadlı","Qusar","Saatlı","Sabirabad","Sədərək","Şabran","Şahbuz","Şəki","Şamaxı",
+    "Şəmkir","Şərur","Şirvan","Siyəzən","Sumqayıt","Şuşa","Tərtər","Tovuz","Ucar","Yardımlı",
+    "Yevlax","Zaqatala","Zəngilan","Zərdab"
+  ]
+};
+
+    window.$ = (id)=> document.getElementById(id);
+    function setLang(lng){
+      const t = i18n[lng]||i18n.tr; document.documentElement.lang=lng; document.documentElement.dir=(lng==='ar')?'rtl':'ltr';
+      $('t_title').textContent=t.title; $('t_sub').innerHTML=t.sub; $('t_lang').textContent=t.lang;
+      $('l_title').textContent=t.l_title; $('h_title').textContent=t.h_title;
+      $('l_description').textContent=t.l_description; $('h_description').textContent=t.h_description;
+      $('l_category').textContent=t.l_category; $('l_subcategory').textContent=t.l_subcategory;
+      $('l_country').textContent=t.l_country;
+      $('l_province').textContent=t.l_province; $('l_district').textContent=t.l_district;
+      $('l_price').textContent=t.l_price; $('l_stock').textContent=t.l_stock; $('l_images').textContent=t.l_images;
+      $('b_cancel').textContent=t.btn_cancel; $('b_submit').textContent=t.btn_submit;
+      $('title').placeholder=t.placeholders.title; $('description').placeholder=t.placeholders.desc; $('districtInput').placeholder=t.placeholders.district; $('price').placeholder=t.placeholders.price;
+      const stock=$('stock'); stock.options[0].textContent=t.stock.var; stock.options[1].textContent=t.stock.yok;
+      rebuildCategories(lng); fillProvinces(lng);
+      window.__t = t; $('toast').textContent = t.toast_ok;
+    }
+
+    function rebuildCategories(lng){
+      const selCat=$('category'); const selSub=$('subcategory');
+      selCat.innerHTML = `<option value="" disabled selected>${i18n[lng].choose}</option>` +
+        cats.map(c=>`<option value="${c.id}">${c.names[lng]||c.names.tr}</option>`).join('');
+      selSub.disabled = true; selSub.innerHTML = `<option value="" disabled selected>${i18n[lng].choose}</option>`;
+      selCat.onchange = ()=>{
+        const c=cats.find(x=>x.id===selCat.value); selSub.disabled = !c;
+        const idx = {tr:1,en:2,de:3,ar:4}[lng] || 1;
+        selSub.innerHTML = `<option value="" disabled selected>${i18n[lng].choose}</option>` +
+          (c? c.subs.map(s=>`<option value="${s[0]}">${s[idx]}</option>`).join('') : '');
+      };
+    }
+
+    function fillProvinces(){
+  const selProv   = $('province');
+  const countryEl = $('country');
+  const lng       = document.documentElement.lang || 'tr';
+  const regions   = COUNTRY_REGIONS[countryEl.value] || [];
+  const choose    = (i18n[lng] && i18n[lng].choose) || 'Seçiniz';
+
+  selProv.innerHTML =
+    `<option value="" disabled selected>${choose}</option>` +
+    regions.map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+    const inputEl = $('images');
+    const previewsEl = $('previews');
+    let __items = [];
+    let __coverIndex = -1;
+
+    function syncInputFromSelected(){
+      const dt = new DataTransfer();
+      __items.forEach(it=> dt.items.add(it.file));
+      inputEl.files = dt.files;
+    }
+
+    function renderPreviews(){
+      const t = window.__t || i18n.tr;
+      previewsEl.innerHTML = '';
+      __items.forEach((it, idx)=>{
+        const box = document.createElement('div');
+        box.className = 'thumb' + (idx===__coverIndex? ' coverSel':'');
+
+        const img = document.createElement('img');
+        img.alt = `${t.l_images} ${idx+1}`;
+        img.src = it.dataUrl || 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="100%" height="100%" fill="#f3f4f6"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#9CA3AF" font-family="Arial" font-size="12">No Preview</text></svg>');
+        box.appendChild(img);
+
+        if(idx===__coverIndex){
+          const badge=document.createElement('div');
+          badge.className='cover';
+          badge.textContent=t.cover;
+          box.appendChild(badge);
+        }
+
+        const btns = document.createElement('div');
+        btns.className = 'btns';
+        const bCover = document.createElement('button');
+        bCover.type='button'; bCover.textContent = t.coverMake;
+        bCover.onclick = (ev)=>{ ev.preventDefault(); __coverIndex = idx; renderPreviews(); };
+        const bDel = document.createElement('button');
+        bDel.type='button'; bDel.textContent = t.del;
+        bDel.onclick = (ev)=>{ ev.preventDefault(); __items.splice(idx,1); if(__items.length===0){ __coverIndex=-1; } else if(__coverIndex===idx){ __coverIndex=0; } else if(__coverIndex>idx){ __coverIndex--; } syncInputFromSelected(); renderPreviews(); };
+        btns.appendChild(bCover);
+        btns.appendChild(bDel);
+        box.appendChild(btns);
+
+        previewsEl.appendChild(box);
+      });
+    }
+
+    inputEl.addEventListener('change', ()=>{
+      const files = Array.from(inputEl.files || []).slice(0,5);
+      __items = [];
+      if(files.length){ __coverIndex = 0; }
+      let done = 0;
+      files.forEach((f, i)=>{
+        const fr = new FileReader();
+        fr.onload = (e)=>{ __items[i] = { file: f, dataUrl: e.target.result }; done++; if(done===files.length) { syncInputFromSelected(); renderPreviews(); } };
+        fr.onerror = ()=>{ __items[i] = { file: f, dataUrl: '' }; done++; if(done===files.length) { syncInputFromSelected(); renderPreviews(); } };
+        fr.readAsDataURL(f);
+      });
+      if(files.length===0){ previewsEl.innerHTML=''; __coverIndex=-1; }
+    });
+
+    // Başlangıç dili TR ve kapatma (index.html)
+    const sel=$('langSel'); sel.value='tr'; setLang('tr');
+    const closeBtn = $('closeBtn'); if(closeBtn){ closeBtn.onclick = ()=>{ window.location.href='/index.html'; }; }
+    sel.addEventListener('change', ()=> setLang(sel.value));
+    fillProvinces('tr'); rebuildCategories('tr');
+    $('country').addEventListener('change', fillProvinces);
+
+  })();
+  </script>
+   
+  <!-- Firestore + BULUT (Cloudinary) yükleme (aynen) -->
+  <script type="module">
+    const CLOUD_NAME    = 'dbntnzogo';
+    const UPLOAD_PRESET = 'unsigned_avatars';
+    const API_KEY       = '321492881526576';
+
+    const app   = window.app   || window.firebaseApp;
+    const auth  = window.auth  || (window.firebase && window.firebase.auth);
+    const db    = window.db    || (window.firebase && window.firebase.db);
+
+    function serverNow(){ return (window.firebase && window.firebase.serverTimestamp) ? window.firebase.serverTimestamp() : new Date(); }
+    async function setDocX(path, data){
+      if (window.firebase && window.firebase.setDoc) return window.firebase.setDoc(path, data);
+      if (window._setDoc) return window._setDoc(path, data);
+      throw new Error('setDoc fonksiyonu yok (firebase-init.js kontrol edin)');
+    }
+    function getAuthUser(){ return (auth && auth.currentUser) ? auth.currentUser : null; }
+
+    async function uploadAllToCloud(uid, docId, files){
+      const urls = [];
+      if(!files || !files.length) return urls;
+      const folder = `listings/${uid}/${docId}`;
+      for (let i=0;i<files.length;i++){
+        const f = files[i];
+        const form = new FormData();
+        form.append('file', f);
+        form.append('upload_preset', UPLOAD_PRESET);
+        form.append('folder', folder);
+
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+          method: 'POST', body: form
+        });
+        if(!res.ok){
+          const txt = await res.text();
+          throw new Error('Buluta yükleme hatası: '+txt);
+        }
+        const json = await res.json();
+        urls.push(json.secure_url || json.url);
+      }
+      return urls;
+    }
+
+    const $ = (id)=> document.getElementById(id);
+    const form = $('listingForm');
+    const msg  = $('msg');
+    const toast = $('toast');
+
+    function t(){ return (window.__t) || { errors:{}, toast_ok:'Kaydedildi.' }; }
+    function showMsg(text, ok=false){ msg.style.color = ok ? 'var(--ok)' : '#6b7280'; msg.textContent = text; }
+    function showToast(text){
+      toast.textContent = text || t().toast_ok; toast.style.opacity = '1'; toast.style.transform = 'translateX(-50%) scale(1)';
+      setTimeout(()=>{ toast.style.opacity='0'; toast.style.transform='translateX(-50%) scale(0.95)'; }, 1800);
+    }
+    function getCoverIndex(){
+      const list = Array.from(document.querySelectorAll('#previews .thumb'));
+      const i = list.findIndex(el => el.querySelector('.cover'));
+      return (i >= 0 ? i : (list.length ? 0 : -1));
+    }
+
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const user = getAuthUser();
+      if(!user){ showMsg(t().errors.auth || 'Giriş yapın.'); return; }
+
+           const lang = document.documentElement.lang || 'tr';
+      const country = $('country').value;
+      const title = $('title').value.trim();
+      const description = $('description').value.trim();
+      const category = $('category').value;
+      const subcategory = $('subcategory').value;
+      const province = $('province').value;
+      const district = $('districtInput').value.trim();
+      const price = parseInt(($('price').value||'0'), 10) || 0;
+      const stock = $('stock').value;
+
+      if(title.length < 6){ showMsg(t().errors.title || 'Başlık kısa.'); return; }
+      if(description.length < 30){ showMsg(t().errors.desc || 'Açıklama kısa.'); return; }
+      if(!category){ showMsg(t().errors.cat || 'Kategori seçin.'); return; }
+      if(!subcategory){ showMsg(t().errors.sub || 'Alt kategori seçin.'); return; }
+      if(!country){ showMsg(t().errors.prov || 'Ülke seçin.'); return; }
+      if(!province){ showMsg(t().errors.prov || 'İl seçin.'); return; }
+      if(!district){ showMsg(t().errors.dist || 'İlçe girin.'); return; }
+      if(price < 1){ showMsg(t().errors.price || 'Fiyat en az 1.'); return; }
+
+      const files = Array.from(($('images').files||[])).slice(0,5);
+      if(files.length > 5){ showMsg(t().errors.files || 'En fazla 5 foto.'); return; }
+      for(const f of files){ if(!/image\/(jpeg|png|webp)/i.test(f.type)){ showMsg(t().errors.filetype || 'Sadece JPG/PNG/WebP.'); return; } }
+
+      const submitBtn = $('b_submit');
+      submitBtn.disabled = true; submitBtn.textContent = 'Kaydediliyor…';
+      showMsg('');
+
+      try{
+        const autoId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).slice(2,8));
+        const docPath = `listings/${autoId}`;
+
+        let photoURLs = [];
+        try{ photoURLs = await uploadAllToCloud(user.uid, autoId, files); }
+        catch(upErr){ console.warn('upload fail', upErr); showMsg('Fotoğraf yükleme hatası: '+upErr.message); }
+
+        const coverIndex = (getCoverIndex());
+        const coverUrl = (photoURLs[coverIndex] || photoURLs[0] || '');
+
+        const now = Date.now();
+const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+
+const payload = {
+  title, description, category, subcategory,
+  country, province, district, price, stock,
+  status: 'pending',
+  showcase: false,
+  showcasePending: false,
+
+  // 🔴 SÜRELER
+  expireAt: firebase.firestore.Timestamp.fromMillis(now + THIRTY_DAYS),
+showcaseExpireAt: firebase.firestore.Timestamp.fromMillis(now + THIRTY_DAYS),
+
+  photos: photoURLs,
+  coverIndex: (coverIndex>=0?coverIndex:0),
+  coverUrl: coverUrl,
+  userId: user.uid,
+  locale: lang,
+  createdAt: serverNow(),
+  updatedAt: serverNow()
+};
+
+
+        await setDocX(docPath, payload);
+
+        showToast(t().toast_ok || 'Kaydedildi.');
+        form.reset();
+        setTimeout(()=>{ window.location.href = 'profile.html'; }, 900);
+      }catch(err){
+        console.error(err);
+        showMsg('Kaydetme hatası: '+ (err && err.message ? err.message : err));
+      }finally{
+        submitBtn.disabled = false; submitBtn.textContent = (window.__t?.btn_submit) || 'Kaydet';
+      }
+    });
+
+  </script>  
+   const showcase = rows.filter(r => !!r.showcase);
+    const standard = rows.filter(r => !r.showcase);
+    allListings = [...showcase, ...standard];
+    page = 0;
+    render();
+  } catch (err) {
+    info.textContent = currentLang === 'en'
+      ? 'Failed to load listings'
+      : 'İlanlar yüklenemedi';
+    console.error(err);
+  }
+}
+
+// Firebase hazır olduğunda çalıştır
+if (self.__fbReady) {
+  loadListings();
+} else {
+  document.addEventListener('fb-ready', loadListings, { once: true });
+}
+
+    // dil değişirse liste metinlerini yenile
+    window.addEventListener('storage', (e)=>{ if(e.key==='ue_lang'){ currentLang = localStorage.getItem('ue_lang')||'tr'; render(); } });
+  </script>
+</body>
+</html>  
+
